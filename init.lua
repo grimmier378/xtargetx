@@ -15,6 +15,7 @@ local max_xtargs = 1
 local themeFile = mq.configDir .. '/MyThemeZ.lua'
 local size = 25
 local angle = 0
+
 local tmpBgColor = ImGui.GetStyleColorVec4(ImGuiCol.TableRowBg)
 if mq.TLO.Me.XTargetSlots() ~= nil then
     max_xtargs = mq.TLO.Me.XTargetSlots()
@@ -32,6 +33,7 @@ end
 
 local slowedList = {}
 local mezzedList = {}
+local snaredList = {}
 
 local openGUI, drawGUI = true, true
 
@@ -81,6 +83,14 @@ local actor = actors.register(function(message)
         elseif result == 'CAST_IMMUNE' then
             mezzedList[ID] = Icons.FA_EXCLAMATION
         end
+    elseif message.content.id == 'snared' then
+        local ID = message.content.targetID
+        local result = message.content.result
+        if result == 'CAST_SUCCESS' then
+            snaredList[ID] = Icons.MD_SNOOZE
+        elseif result == 'CAST_IMMUNE' then
+            snaredList[ID] = Icons.FA_EXCLAMATION
+        end
     end
 end)
 
@@ -117,6 +127,23 @@ local listCleanup = function()
         end
         if remove == true then
             mezzedList[ID] = nil
+        end
+    end
+    for ID in pairs(snaredList) do
+        local remove = false
+        remove = mq.TLO.Me.XTarget() == 0
+        for i = 1, max_xtargs do
+            if mq.TLO.Me.XTarget(i).Type() == 'NPC' or mq.TLO.Me.XTarget(i).Type() == 'Pet' then
+                if mq.TLO.Me.XTarget(i).ID() == ID then
+                    remove = false
+                    break
+                else
+                    remove = true
+                end
+            end
+        end
+        if remove == true then
+            snaredList[ID] = nil
         end
     end
 end
@@ -250,11 +277,31 @@ local getMez = function(spawn)
     end
     if mezzed == Icons.MD_SNOOZE then
         textColor = settings.colors.green
-    elseif mezzed == Icons.FA_EXCLAMATION
-    then
+    else
         textColor = settings.colors.red
     end
     return textColor, mezzed
+end
+
+local getSnare = function(spawn)
+    local ID = spawn.ID()
+    local snared = ''
+    local textColor = settings.colors.purple
+    if ID == mq.TLO.Target.ID() then
+        if mq.TLO.Target.Snared() == nil then
+            snared = ''
+        else
+            snared = Icons.MD_SLOW_MOTION_VIDEO
+        end
+    elseif snaredList[ID] then
+        snared = snaredList[ID]
+    end
+    if snared == Icons.MD_SLOW_MOTION_VIDEO then
+        textColor = settings.colors.green
+    else
+        textColor = settings.colors.red
+    end
+    return textColor, snared
 end
 
 local getDistance = function(spawn)
@@ -413,28 +460,34 @@ end
 
 local function CleanXtar()
     if mq.TLO.Me.XTarget() > 0 then
-        for i = 1, mq.TLO.Me.XTargetSlots() do
-            local xType = mq.TLO.Me.XTarget(i).Type()
-            local xID = mq.TLO.Me.XTarget(i).ID()
-            local xName = mq.TLO.Me.XTarget(i).Name()
+        local i = mq.TLO.Me.XTargetSlots() or 0
+        while i > 0 do
+            local xType = mq.TLO.Me.XTarget(i).Type() or 'NULL'
+            local xID = mq.TLO.Me.XTarget(i).ID() or 0
+            local xName = mq.TLO.Me.XTarget(i).Name() or 'NULL'
+            local xDist = mq.TLO.Me.XTarget(i).Distance() or 0
+
             if xType == 'PC' then
-                printf("\ayxFix\aw:: Skipping \agPC\ax Xtarget Slot:: \at%s", i)
+                -- printf("\ayxFix\aw:: Skipping \agPC\ax Xtarget Slot:: \at%s", i)
                 goto continue
             end
-            if not (xID > 0 and xType ~= 'Corpse' and xType ~= 'Chest') then
+            if xID == 0 or xType == 'Corpse' or xType == 'Chest' or xDist > 500 or xType == 'NULL' then
                 local xCount = mq.TLO.Me.XTarget() or 0
-                if (xCount > 0 and xID == 0) or (xType == 'Corpse') or (xType == 'Chest') then
-                    if ((xName ~= 'NULL' and xID == 0) or (xType == 'Corpse') or (xType == 'Chest')) then
+                if (xCount > 0 and xID == 0) or (xType == 'Chest') or xDist > 500 then
+                    if ((xName ~= 'NULL' and xID == 0) or (xType == 'Chest')) or xDist > 500 then
                         mq.cmdf("/squelch /xtarg set %s ET", i)
                         mq.delay(100)
                         mq.cmdf("/squelch /xtarg set %s AH", i)
-                        local debugString = string.format('\ayxFix\aw:: Cleaning Xtarget Slot::\at %s\aw XTarget Count::\ao %s\aw Name::\ag %s\aw Type:: \at%s', i, xCount, xName,
-                            xType)
+                        local debugString = string.format('\ayxFix\aw:: Cleaning Xtarget Slot::\at %s\aw XTarget Count::\ao %s\aw Name::\ag %s\aw Type:: \at%s \axDist: \ay%.0f', i,
+                            xCount, xName,
+                            xType, xDist)
                         print(debugString)
                     end
                 end
             end
             ::continue::
+            mq.delay(mq.TLO.EverQuest.Ping() + 2)
+            i = i - 1
         end
     end
 end
@@ -442,7 +495,7 @@ end
 local drawRow = function(drawData)
     ImGui.TableNextRow()
     --Set row color for target and/or friendly
-
+    ImGui.PushID(drawData.spawn.ID())
     if drawData.spawn.ID() == mq.TLO.Target.ID() and drawData.friendly == false then
         ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, getConLevel(drawData.spawn))
     elseif drawData.spawn.ID() == mq.TLO.Target.ID() and drawData.friendly == true then
@@ -537,6 +590,12 @@ local drawRow = function(drawData)
     --mezzed
     ImGui.TableNextColumn()
     ImGui.TextColored(drawData.mezTextColor, drawData.mezzed)
+    -- snared
+    ImGui.TableNextColumn()
+    if drawData.friendly == false then
+        ImGui.TextColored(drawData.snareTextColor, drawData.snared)
+    end
+    ImGui.PopID()
 end
 
 local displayGUI = function()
@@ -550,10 +609,10 @@ local displayGUI = function()
         ImGui.PushStyleColor(ImGuiCol.TableRowBgAlt, settings.general.colorTableBgAlt)
         ImGui.PushStyleColor(ImGuiCol.TableHeaderBg, settings.general.colorTableHeaderBg)
         if settings.general.useRowHeaders == true then
-            ImGui.BeginTable('##table1', 10, treeview_table_flags)
+            ImGui.BeginTable('##table1', 11, treeview_table_flags)
             ImGui.TableSetupColumn("Row", bit32.bor(ImGuiTableColumnFlags.None), 30)
         else
-            ImGui.BeginTable('##table1', 9, treeview_table_flags)
+            ImGui.BeginTable('##table1', 10, treeview_table_flags)
         end
         ImGui.TableSetupColumn("Lvl", bit32.bor(ImGuiTableColumnFlags.None), 30)
         ImGui.TableSetupColumn("Name", bit32.bor(ImGuiTableColumnFlags.None), 100)
@@ -572,6 +631,7 @@ local displayGUI = function()
         end
         ImGui.TableSetupColumn("Slow", bit32.bor(ImGuiTableColumnFlags.None), 40)
         ImGui.TableSetupColumn("Mez", bit32.bor(ImGuiTableColumnFlags.None), 60)
+        ImGui.TableSetupColumn('Snared', bit32.bor(ImGuiTableColumnFlags.None), 60)
         ImGui.TableSetupScrollFreeze(0, 1)
         ImGui.TableHeadersRow()
         for i = 1, max_xtargs do
@@ -594,6 +654,7 @@ local displayGUI = function()
                 drawData.slowPct = -1
                 drawData.distance = 0
                 drawData.mezzed = ''
+                drawData.snared = ''
                 drawData.friendly = false
                 local targetType = mq.TLO.Me.XTarget(i).Type()
                 if targetType == 'Pet' then
@@ -606,6 +667,7 @@ local displayGUI = function()
                     drawData.aggroTextColor, drawData.pctAggro = getAggroPct(drawData.spawn)
                     drawData.slowTextColor, drawData.slowPct = getSlow(drawData.spawn)
                     drawData.mezTextColor, drawData.mezzed = getMez(drawData.spawn)
+                    drawData.snareTextColor, drawData.snared = getSnare(drawData.spawn)
                     drawData.distTextColor, drawData.distance = getDistance(drawData.spawn)
                 elseif ((targetType == 'PC' or targetType == 'Mercenary') and (settings.general.showFriendlies or settings.general.showEmptyRows)) then
                     drawData.conTextColor, drawData.level = settings.colors.default, drawData.level
@@ -650,6 +712,15 @@ local cmd_xtx = function(cmd)
         mq.cmd('/dgae /lua stop xtargetx/backgroundactors')
         running = false
     end
+    if cmd == 'xfix' then
+        settings.general.xFixEnabled = not settings.general.xFixEnabled
+        printf("%s \agxFix is now %s", xtxheader, settings.general.xFixEnabled and '\agEnabled' or '\arDisabled')
+        settings.saveSettings()
+    end
+    if cmd == 'dofix' then
+        printf("%s \agXtarget \ayCleaning Stuck \atXTarget Slots", xtxheader)
+        CleanXtar()
+    end
     if cmd == 'settings' then
         settings.openSettingsGUI = true
         settings.drawSettingsGUI = true
@@ -666,17 +737,23 @@ local function init()
     mq.cmd('/dgae /lua run xtargetx/backgroundactors')
     mq.bind('/xtx', cmd_xtx)
     printf("%s \agstarting. Use \ar/xtx help \ag for a list of commands.", xtxheader)
+    if settings.general.xFixEnabled then
+        printf("%s \agXFix is \ayEnabled", xtxheader)
+    else
+        printf("%s \arXFix is \ayDisabled", xtxheader)
+    end
 end
-
 local function main()
     while running do
+        local lastCheck = os.clock()
         if mq.TLO.Window('CharacterListWnd').Open() then running = false end
         local xFix = mq.TLO.Lua.Script('xfix').Status()
-        if xFix ~= 'RUNNING' then
-            CleanXtar()
+        if xFix ~= 'RUNNING' and os.difftime(os.clock(), lastCheck) > 2 then
+            if settings.general.xFixEnabled then CleanXtar() end
+            lastCheck = os.clock()
         end
         listCleanup()
-        mq.delay(300)
+        mq.delay((mq.TLO.EverQuest.Ping() + 1) * 2)
     end
     mq.unbind('/xtx')
     mq.exit()

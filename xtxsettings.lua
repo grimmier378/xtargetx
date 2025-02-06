@@ -60,11 +60,15 @@ settings.initSettings = function()
     if configSettings.general.AdvToolTip == nil then
         configSettings.general.AdvToolTip = true
     end
+    if configSettings.general.xFixEnabled == nil then
+        configSettings.general.xFixEnabled = false
+    end
     settings.hp = configSettings.hp
     settings.aggro = configSettings.aggro
     settings.distance = configSettings.distance
     settings.slow = configSettings.slow
     settings.general = configSettings.general
+
     settings.AdvToolTip = configSettings.general.AdvToolTip
     settings.colors = {
         red = IM_COL32(255, 0, 0, 75),
@@ -72,7 +76,7 @@ settings.initSettings = function()
         white = IM_COL32(255, 255, 255, 100),
         blue = IM_COL32(0, 0, 255, 75),
         lightBlue = IM_COL32(0, 164, 255, 80),
-        green = IM_COL32(0, 255, 0, 85),
+        green = IM_COL32(0, 255, 0, 155),
         grey = IM_COL32(158, 158, 158, 75),
         purple = IM_COL32(255, 0, 255, 85),
         default = IM_COL32(255, 255, 255, 255),
@@ -137,6 +141,7 @@ settings.checkConfig = function()
         configSettings.general.colorTableHeaderBg = IM_COL32(48, 48, 51,
             255)
     end
+    if configSettings.general.xFixEnabled == nil then configSettings.general.xFixEnabled = false end
     mq.pickle(settings.configPath, configSettings)
 end
 
@@ -182,6 +187,7 @@ settings.createConfig = function()
             showFriendlies = false,
             themeName = 'Default',
             AdvToolTip = true,
+            xFixEnabled = false,
             friendlyRowColor = IM_COL32(76, 178, 76, 115),
             targetRowColor = IM_COL32(178, 76, 76, 115),
             friendlyTargetRowColor = IM_COL32(178, 76, 178, 115),
@@ -325,6 +331,9 @@ settings.settingsGUI = function()
                 configSettings.general.targetRowColor, settings_coloredit_flags)
             ImGui.SameLine()
             ImGui.HelpMarker('Background color of row containing your current NPC target')
+            configSettings.general.xFixEnabled = ImGui.Checkbox("XFix Enabled", configSettings.general.xFixEnabled)
+            ImGui.SameLine()
+            ImGui.HelpMarker('Enable/Disable the XFix feature')
         end
         if ImGui.CollapsingHeader('Health') then
             ImGui.PushItemWidth(35)
@@ -426,6 +435,13 @@ settings.settingsGUI = function()
     ImGui.End()
 end
 
+settings.saveSettings = function()
+    printf("%s Saving Settings...", xtxheader)
+    configSettings.general.themeName = settings.general.themeName
+    configSettings.general.xFixEnabled = settings.general.xFixEnabled
+    mq.pickle(settings.configPath, configSettings)
+    settings.initSettings()
+end
 settings.loadSettings = function()
     local configData, err = loadfile(mq.configDir .. '/' .. settings.configPath)
     if err then
